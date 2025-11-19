@@ -1,98 +1,165 @@
-import { Image } from 'expo-image';
-import { Platform, StyleSheet } from 'react-native';
+// app/(tabs)/index.tsx
+// ГЛАВНЫЙ ЭКРАН ИГРЫ "GameTap" - здесь происходит весь геймплей
+import React, { useState, useEffect } from 'react';
+import {
+  View,
+  Text,
+  TouchableOpacity,
+  Vibration,
+  Alert,
+  ScrollView,
+} from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { Stack, useRouter } from 'expo-router';
+import PrimaryButton from '../../components/PrimaryButton';
+import Card from '../../components/Card';
 
-import { HelloWave } from '@/components/hello-wave';
-import ParallaxScrollView from '@/components/parallax-scroll-view';
-import { ThemedText } from '@/components/themed-text';
-import { ThemedView } from '@/components/themed-view';
-import { Link } from 'expo-router';
+export default function GameScreen() {
+  // ОСНОВНЫЕ СОСТОЯНИЯ ИГРЫ
+  const [score, setScore] = useState(0);        // Текущий счет
+  const [level, setLevel] = useState(1);        // Уровень (каждые 10 очков)
+  const [combo, setCombo] = useState(0);        // Комбо (быстрые тапы)
+  const [tapSpeed, setTapSpeed] = useState(100); // Скорость тапа (мс)
+  const [gameActive, setGameActive] = useState(true); // Игра активна?
 
-export default function HomeScreen() {
+  const router = useRouter();
+
+  // ЭФФЕКТ: обновление уровня при достижении 10/20/30... очков
+  useEffect(() => {
+    const newLevel = Math.floor(score / 10) + 1;
+    if (newLevel > level) {
+      setLevel(newLevel);
+      setTapSpeed(Math.max(50, 100 - (newLevel * 5))); // Ускоряем тапы
+      Vibration.vibrate(200); // Вибрация при уровне
+    }
+  }, [score]);
+
+  // ЭФФЕКТ: победа при 100 очках
+  useEffect(() => {
+    if (score >= 100) {
+      setGameActive(false);
+      Alert.alert(
+        '🎉 ПОБЕДА!',
+        `Ты прошёл ${level} уровней!\nИтоговый счёт: ${score}`,
+        [{ text: 'В меню', onPress: () => router.push('/menu') }]
+      );
+    }
+  }, [score]);
+
+  // ОСНОВНАЯ ФУНКЦИЯ ТАПА - сердце игры!
+  const handleTap = () => {
+    if (!gameActive) return;
+
+    // +1 очко за каждый тап
+    setScore(prev => prev + 1);
+    
+    // Комбо-система: +бонус за быстрые тапы
+    setCombo(prev => {
+      const newCombo = prev + 1;
+      if (newCombo >= 5) {
+        setScore(s => s + 1); // Бонус очко за 5+ комбо
+        Vibration.vibrate(50);
+      }
+      return newCombo;
+    });
+  };
+
+  // СБРОС ИГРЫ
+  const resetGame = () => {
+    setScore(0);
+    setLevel(1);
+    setCombo(0);
+    setTapSpeed(100);
+    setGameActive(true);
+  };
+
   return (
-    <ParallaxScrollView
-      headerBackgroundColor={{ light: '#A1CEDC', dark: '#1D3D47' }}
-      headerImage={
-        <Image
-          source={require('@/assets/images/partial-react-logo.png')}
-          style={styles.reactLogo}
-        />
-      }>
-      <ThemedView style={styles.titleContainer}>
-        <ThemedText type="title">Welcome!</ThemedText>
-        <HelloWave />
-      </ThemedView>
-      <ThemedView style={styles.stepContainer}>
-        <ThemedText type="subtitle">Step 1: Try it</ThemedText>
-        <ThemedText>
-          Edit <ThemedText type="defaultSemiBold">app/(tabs)/index.tsx</ThemedText> to see changes.
-          Press{' '}
-          <ThemedText type="defaultSemiBold">
-            {Platform.select({
-              ios: 'cmd + d',
-              android: 'cmd + m',
-              web: 'F12',
-            })}
-          </ThemedText>{' '}
-          to open developer tools.
-        </ThemedText>
-      </ThemedView>
-      <ThemedView style={styles.stepContainer}>
-        <Link href="/modal">
-          <Link.Trigger>
-            <ThemedText type="subtitle">Step 2: Explore</ThemedText>
-          </Link.Trigger>
-          <Link.Preview />
-          <Link.Menu>
-            <Link.MenuAction title="Action" icon="cube" onPress={() => alert('Action pressed')} />
-            <Link.MenuAction
-              title="Share"
-              icon="square.and.arrow.up"
-              onPress={() => alert('Share pressed')}
-            />
-            <Link.Menu title="More" icon="ellipsis">
-              <Link.MenuAction
-                title="Delete"
-                icon="trash"
-                destructive
-                onPress={() => alert('Delete pressed')}
-              />
-            </Link.Menu>
-          </Link.Menu>
-        </Link>
+    <SafeAreaView style={{ flex: 1, backgroundColor: '#1a1a2e' }}>
+      <Stack.Screen 
+        options={{ title: '🎮 GameTap' }} 
+      />
 
-        <ThemedText>
-          {`Tap the Explore tab to learn more about what's included in this starter app.`}
-        </ThemedText>
-      </ThemedView>
-      <ThemedView style={styles.stepContainer}>
-        <ThemedText type="subtitle">Step 3: Get a fresh start</ThemedText>
-        <ThemedText>
-          {`When you're ready, run `}
-          <ThemedText type="defaultSemiBold">npm run reset-project</ThemedText> to get a fresh{' '}
-          <ThemedText type="defaultSemiBold">app</ThemedText> directory. This will move the current{' '}
-          <ThemedText type="defaultSemiBold">app</ThemedText> to{' '}
-          <ThemedText type="defaultSemiBold">app-example</ThemedText>.
-        </ThemedText>
-      </ThemedView>
-    </ParallaxScrollView>
+      <ScrollView 
+        contentContainerStyle={{ 
+          flexGrow: 1, 
+          justifyContent: 'center', 
+          alignItems: 'center',
+          padding: 20 
+        }}
+        bounces={false}
+      >
+        {/* ШАПКА С СЧЕТОМ */}
+        <View style={{ alignItems: 'center', marginBottom: 40 }}>
+          <Text style={{ 
+            fontSize: 64, 
+            fontWeight: 'bold', 
+            color: '#00ff88', 
+            textShadowColor: 'rgba(0,255,136,0.5)',
+            textShadowOffset: { width: 0, height: 0 },
+            textShadowRadius: 20 
+          }}>
+            {score}
+          </Text>
+          
+          <Text style={{ fontSize: 18, color: '#aaa', marginTop: 8 }}>
+            Уровень {level} • Комбо x{combo}
+          </Text>
+          
+          <Text style={{ fontSize: 14, color: '#666', marginTop: 4 }}>
+            Цель: 100 очков
+          </Text>
+        </View>
+
+        {/* ОСНОВНАЯ КНОПКА ДЛЯ ТАПА - ОГРОМНАЯ! */}
+        <TouchableOpacity
+          style={{
+            width: 300,
+            height: 300,
+            borderRadius: 160,
+            backgroundColor: '#ff006e',
+            justifyContent: 'center',
+            alignItems: 'center',
+            shadowColor: '#ff006e',
+            shadowOffset: { width: 0, height: 20 },
+            shadowOpacity: 0.8,
+            shadowRadius: 40,
+            elevation: 20,
+          }}
+          onPress={handleTap}
+          activeOpacity={0.7}
+          delayTouchStart={tapSpeed / 1000} // Задержка для скорости уровня
+        >
+          <Text style={{
+            fontSize: 48,
+            fontWeight: 'bold',
+            color: '#fff',
+          }}>
+            ТАП!
+          </Text>
+          <Text style={{ fontSize: 24, color: '#fff', opacity: 0.8 }}>
+            👆
+          </Text>
+        </TouchableOpacity>
+
+        {/* КНОПКИ УПРАВЛЕНИЯ */}
+        <View style={{ marginTop: 40, gap: 12, width: '100%' }}>
+          <PrimaryButton
+            title="🔄 Новая игра"
+            onPress={resetGame}
+            style={{ backgroundColor: '#00ff88' }}
+          />
+          
+          <PrimaryButton
+            title="📋 Рекорды"
+            onPress={() => router.push('/records')}
+          />
+          
+          <PrimaryButton
+            title="⚙️ Настройки"
+            onPress={() => router.push('/settings')}
+          />
+        </View>
+      </ScrollView>
+    </SafeAreaView>
   );
 }
-
-const styles = StyleSheet.create({
-  titleContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  stepContainer: {
-    gap: 8,
-    marginBottom: 8,
-  },
-  reactLogo: {
-    height: 178,
-    width: 290,
-    bottom: 0,
-    left: 0,
-    position: 'absolute',
-  },
-});
