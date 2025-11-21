@@ -4,125 +4,111 @@ import {
   View,
   Text,
   TextInput,
+  TouchableOpacity,
   StyleSheet,
   Alert,
-  TouchableOpacity,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useRouter } from 'expo-router';
+import { useRouter, useLocalSearchParams } from 'expo-router';
+import AppHeader from '../../components/AppHeader';
+import ProfileButton from '../../components/ProfileButton'; // кликабельный ЛК (как на главной)
+import { useTheme } from '../../src/contexts/ThemeContext';
 import { useAuth } from '../../src/contexts/AuthContext';
-import PrimaryButton from '../../components/PrimaryButton';
 
 export default function LevelSetupScreen() {
   const router = useRouter();
+  const params = useLocalSearchParams();
+  const { isDark } = useTheme();
   const { user } = useAuth();
 
-  const [timeSeconds, setTimeSeconds] = useState('30');
-  const [targetScore, setTargetScore] = useState('');
+  const [time, setTime] = useState('30');
+  const [score, setScore] = useState(''); // поле пустое, игрок вводит сам
 
-  // Проверка: только цифры и не пустое
-  const isValidTime = timeSeconds && /^\d+$/.test(timeSeconds) && parseInt(timeSeconds) >= 10;
-  const isValidScore = targetScore && /^\d+$/.test(targetScore) && parseInt(targetScore) >= 1;
+  // определяем текущий уровень: сначала из params, иначе из user.level, иначе 1
+  const playerLevel = parseInt((params.playerLevel ?? String(user?.level ?? 1)) as string, 10) || 1;
 
-  const timePresets = [30, 60, 90];
-
-  const handleStart = () => {
-    if (!isValidTime) {
-      Alert.alert('Ошибка', 'Введите время: только положительное число (минимум 10 сек)');
-      return;
+  const start = () => {
+    if (!/^\d+$/.test(time) || Number(time) < 10) {
+      return Alert.alert('Ошибка', 'Время ≥ 10 сек');
     }
-    if (!isValidScore) {
-      Alert.alert('Ошибка', 'Введите цель: только ПОЛОЖИТЕЛЬНОЕ ЧИСЛО (минимум 1)!\nБуквы, знаки, 0 — запрещены.');
-      return;
+    if (!/^\d+$/.test(score) || Number(score) < 1) {
+      return Alert.alert('Ошибка', 'Очки ≥ 1');
     }
-
-    const time = parseInt(timeSeconds);
-    const target = parseInt(targetScore);
 
     router.push({
       pathname: '/(game)/gameplay',
-      params: {
-        timeSeconds: time.toString(),
-        targetScore: target.toString(),
-        playerLevel: '1',
-      },
+      params: { timeSeconds: time, targetScore: score, playerLevel: String(playerLevel) },
     });
   };
 
   return (
-    <SafeAreaView style={styles.container}>
-      <Text style={styles.title}>Настройка уровня</Text>
-      <Text style={styles.player}>Игрок: <Text style={styles.nick}>{user?.nick || 'Гость'}</Text></Text>
+    <SafeAreaView style={{ flex: 1, backgroundColor: isDark ? '#0f0f23' : '#ffffff' }}>
+      <AppHeader />
 
-      {/* ВРЕМЯ */}
-      <View style={styles.section}>
-        <Text style={styles.label}>Время уровня (сек)</Text>
-        <View style={styles.presets}>
-          {timePresets.map(p => (
-            <TouchableOpacity
-              key={p}
-              style={[styles.preset, timeSeconds === p.toString() && styles.active]}
-              onPress={() => setTimeSeconds(p.toString())}
-            >
-              <Text style={[styles.presetText, timeSeconds === p.toString() && styles.activeText]}>{p}</Text>
-            </TouchableOpacity>
-          ))}
-        </View>
+      {/* ЛК в правом верхнем углу (единый компонент) */}
+      <ProfileButton />
+
+      {/* Кнопка "Назад в меню" в левом верхнем углу */}
+      <TouchableOpacity
+        style={styles.backBtn}
+        onPress={() => router.replace('/main')}
+        activeOpacity={0.8}
+      >
+        <Text style={styles.backText}>← Назад в меню</Text>
+      </TouchableOpacity>
+
+      <View style={styles.body}>
+        <Text style={[styles.title, { color: isDark ? '#00ff88' : '#6200ee' }]}>Новая игра</Text>
+
+        {/* Показ текущего уровня */}
+        <Text style={[styles.currentLevel, { color: isDark ? '#ddd' : '#333' }]}>
+          Текущий уровень: <Text style={{ fontWeight: 'bold' }}>#{playerLevel}</Text>
+        </Text>
+
+        <Text style={[styles.label, { color: isDark ? '#fff' : '#000' }]}>Время (сек)</Text>
         <TextInput
-          style={[styles.input, !isValidTime && targetScore !== '' && styles.errorInput]}
-          value={timeSeconds}
-          onChangeText={(text) => {
-            if (/^\d*$/.test(text)) setTimeSeconds(text); // только цифры
-          }}
+          style={[styles.input, { backgroundColor: isDark ? '#1a1a2e' : '#f0f0f0', color: isDark ? '#fff' : '#000' }]}
+          value={time}
+          onChangeText={t => /^\d*$/.test(t) && setTime(t)}
           keyboardType="number-pad"
-          placeholder="от 10 сек"
-          placeholderTextColor="#666"
         />
-      </View>
 
-      {/* ЦЕЛЬ ОЧКОВ */}
-      <View style={styles.section}>
-        <Text style={styles.label}>Набрать очков</Text>
+        <Text style={[styles.label, { color: isDark ? '#fff' : '#000' }]}>Набрать очков</Text>
         <TextInput
-          style={[styles.input, !isValidScore && targetScore !== '' && styles.errorInput]}
-          value={targetScore}
-          onChangeText={(text) => {
-            if (/^\d*$/.test(text)) setTargetScore(text); // только цифры
-          }}
+          style={[styles.input, { backgroundColor: isDark ? '#1a1a2e' : '#f0f0f0', color: isDark ? '#fff' : '#000' }]}
+          value={score}
+          onChangeText={s => /^\d*$/.test(s) && setScore(s)}
           keyboardType="number-pad"
-          placeholder="например 50"
-          placeholderTextColor="#666"
+          placeholder="Пример: 50"
+          placeholderTextColor="#888"
         />
-        {!isValidScore && targetScore !== '' && (
-          <Text style={styles.errorText}>
-            Введите ПОЛОЖИТЕЛЬНОЕ ЧИСЛО! (минимум 1)
-          </Text>
-        )}
-      </View>
 
-      <PrimaryButton
-        title="НАЧАТЬ ИГРУ"
-        onPress={handleStart}
-        style={{ backgroundColor: isValidScore && isValidTime ? '#ff006e' : '#444' }}
-        disabled={!isValidScore || !isValidTime}
-      />
+        <TouchableOpacity style={styles.startBtn} onPress={start} activeOpacity={0.85}>
+          <Text style={styles.startText}>НАЧАТЬ</Text>
+        </TouchableOpacity>
+      </View>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#0f0f23', padding: 20 },
-  title: { fontSize: 38, fontWeight: 'bold', color: '#00ff88', textAlign: 'center', marginTop: 40 },
-  player: { fontSize: 18, color: '#aaa', textAlign: 'center', marginBottom: 40 },
-  nick: { color: '#00ff88', fontWeight: 'bold' },
-  section: { marginBottom: 30 },
-  label: { fontSize: 22, color: '#fff', textAlign: 'center', marginBottom: 12 },
-  presets: { flexDirection: 'row', justifyContent: 'center', gap: 16, marginBottom: 16 },
-  preset: { paddingHorizontal: 24, paddingVertical: 12, backgroundColor: '#1a1a2e', borderRadius: 12, borderWidth: 2, borderColor: '#333' },
-  active: { backgroundColor: '#00ff88', borderColor: '#00ff88' },
-  presetText: { color: '#fff', fontWeight: 'bold' },
-  activeText: { color: '#000' },
-  input: { backgroundColor: '#1a1a2e', color: '#fff', fontSize: 28, textAlign: 'center', padding: 18, borderRadius: 16, borderWidth: 2, borderColor: '#333' },
-  errorInput: { borderColor: '#ff4400', backgroundColor: '#44000022' },
-  errorText: { color: '#ff4400', fontSize: 18, fontWeight: 'bold', textAlign: 'center', marginTop: 8 },
+  backBtn: {
+    position: 'absolute',
+    top: 16,
+    left: 12,
+    zIndex: 20,
+    backgroundColor: 'rgba(0,0,0,0.35)',
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 10,
+  },
+  backText: { color: '#fff', fontSize: 14 },
+
+  body: { flex: 1, padding: 30, justifyContent: 'center' },
+  title: { fontSize: 38, fontWeight: 'bold', textAlign: 'center', marginBottom: 8 },
+  currentLevel: { fontSize: 18, textAlign: 'center', marginBottom: 18 },
+  label: { fontSize: 22, textAlign: 'center', marginTop: 20 },
+  input: { padding: 18, borderRadius: 12, textAlign: 'center', fontSize: 26, marginTop: 10 },
+  startBtn: { backgroundColor: '#ff006e', padding: 22, borderRadius: 16, marginTop: 50 },
+  startText: { color: '#fff', fontSize: 28, fontWeight: 'bold', textAlign: 'center' },
 });

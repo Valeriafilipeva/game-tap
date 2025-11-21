@@ -1,266 +1,351 @@
 // app/(game)/gameplay.tsx
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   View,
   Text,
   TouchableOpacity,
   StyleSheet,
-  Vibration,
+  Modal,
   Alert,
+  Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Audio } from 'expo-av';
 import { useAuth } from '../../src/contexts/AuthContext';
+import { useSettings } from '../../src/contexts/SettingsContext';
+import { useTheme } from '../../src/contexts/ThemeContext';
 import { saveGameResult } from '../../src/services/gameHistory';
+import AppHeader from '../../components/AppHeader';
 
 export default function GameplayScreen() {
   const router = useRouter();
-  const { user } = useAuth();
+  const params = useLocalSearchParams();
 
-  const { timeSeconds, targetScore, playerLevel = '1' } = useLocalSearchParams<{
-    timeSeconds: string;
-    targetScore: string;
-    playerLevel?: string;
-  }>();
+  const { user, setUserLevel } = useAuth();
+  const { soundsEnabled } = useSettings();
+  const { isDark } = useTheme();
 
-  const totalTime = parseInt(timeSeconds || '30');
-  const target = parseInt(targetScore || '50');
-  const currentLevel = parseInt(playerLevel || '1');
+  const timeSeconds = parseInt((params.timeSeconds ?? '30') as string, 10) || 30;
+  const targetScore = parseInt((params.targetScore ?? '50') as string, 10) || 50;
+  const currentLevel = parseInt((params.playerLevel ?? String(user?.level ?? 1)) as string, 10) || 1;
 
-  const [timeLeft, setTimeLeft] = useState(totalTime);
-  const [currentScore, setCurrentScore] = useState(0);
-  const [gameActive, setGameActive] = useState(true);
-  const [idleTimer, setIdleTimer] = useState<NodeJS.Timeout | null>(null);
-  const timerRef = useRef<NodeJS.Timeout | null>(null);
+  const [timeLeft, setTimeLeft] = useState<number>(timeSeconds);
+  const [score, setScore] = useState<number>(0);
+  const [gameActive, setGameActive] = useState<boolean>(true);
+  const [isPaused, setIsPaused] = useState<boolean>(false);
+  const [menuVisible, setMenuVisible] = useState<boolean>(false);
 
-  // Звуки
-  const [tapSound, setTapSound] = useState<Audio.Sound | null>(null);
-  const [victorySound, setVictorySound] = useState<Audio.Sound | null>(null);
-  const [failSound, setFailSound] = useState<Audio.Sound | null>(null);
+  const timerRef = useRef<number | null>(null);
+  const idleRef = useRef<number | null>(null);
+  const tapSound = useRef<Audio.Sound | null>(null);
+  const victorySound = useRef<Audio.Sound | null>(null);
 
-  // Загрузка звуков
+  // Load sounds
   useEffect(() => {
-    const loadSounds = async () => {
+    let mounted = true;
+    (async () => {
       try {
-        const { sound: tap } = await Audio.Sound.createAsync(
-          require('../../assets/sounds/tap.mp3')
-        );
-        setTapSound(tap);
-
-        const { sound: victory } = await Audio.Sound.createAsync(
-          require('../../assets/sounds/victory.mp3')
-        );
-        setVictorySound(victory);
-
-        const { sound: fail } = await Audio.Sound.createAsync(
-          require('../../assets/sounds/fail.mp3')
-        );
-        setFailSound(fail);
+        const tapRes = await Audio.Sound.createAsync(require('../../assets/sounds/tap.mp3'));
+        const vicRes = await Audio.Sound.createAsync(require('../../assets/sounds/victory.mp3'));
+        if (!mounted) {
+          await tapRes.sound.unloadAsync().catch(() => {});
+          await vicRes.sound.unloadAsync().catch(() => {});
+          return;
+        }
+        tapSound.current = tapRes.sound;
+        victorySound.current = vicRes.sound;
       } catch (e) {
-        console.warn('Ошибка загрузки звуков:', e);
+        // не критично — просто лог
+        console.warn('Ошибка при загрузке звуков', e);
       }
-    };
-    loadSounds();
+    })();
 
     return () => {
-      tapSound?.unloadAsync();
-      victorySound?.unloadAsync();
-      failSound?.unloadAsync();
+      mounted = false;
+      // Unload sounds if loaded
+      if (tapSound.current) {
+        tapSound.current.unloadAsync().catch(() => {});
+        tapSound.current = null;
+      }
+      if (victorySound.current) {
+        victorySound.current.unloadAsync().catch(() => {});
+        victorySound.current = null;
+      }
     };
   }, []);
 
+  // Play helpers — obey settings.soundsEnabled
   const playTap = async () => {
+    if (!soundsEnabled) return;
     try {
-      if (tapSound) {
-        await tapSound.setPositionAsync(0);
-        await tapSound.playAsync();
-      }
-    } catch (e) {
-      console.warn('Ошибка звука тапа:', e);
+      await tapSound.current?.replayAsync();
+    } catch {
+      // ignore
     }
   };
-
   const playVictory = async () => {
+    if (!soundsEnabled) return;
     try {
-      if (victorySound) {
-        await victorySound.setPositionAsync(0);
-        await victorySound.playAsync();
-      }
-    } catch (e) {
-      console.warn('Ошибка звука победы:', e);
+      await victorySound.current?.replayAsync();
+    } catch {
+      // ignore
     }
   };
 
-  const playFail = async () => {
-    try {
-      if (failSound) {
-        await failSound.setPositionAsync(0);
-        await failSound.playAsync();
-      }
-    } catch (e) {
-      console.warn('Ошибка звука поражения:', e);
-    }
-  };
-
-  // Таймер
+  // Timer effect
   useEffect(() => {
-    if (!gameActive || timeLeft <= 0) return;
+    if (!gameActive || isPaused) {
+      if (timerRef.current !== null) {
+        clearInterval(timerRef.current);
+        timerRef.current = null;
+      }
+      return;
+    }
+
+    // clear existing to avoid double intervals
+    if (timerRef.current !== null) {
+      clearInterval(timerRef.current);
+      timerRef.current = null;
+    }
 
     timerRef.current = setInterval(() => {
-      setTimeLeft(prev => {
-        if (prev <= 1) {
-          clearInterval(timerRef.current!);
-          endGame(currentScore >= target);
+      setTimeLeft(t => {
+        if (t <= 1) {
+          // time's up
+          if (timerRef.current !== null) {
+            clearInterval(timerRef.current);
+            timerRef.current = null;
+          }
+          endGame(false);
           return 0;
         }
-        return prev - 1;
+        return t - 1;
       });
-    }, 1000);
+    }, 1000) as unknown as number;
 
     return () => {
-      if (timerRef.current) clearInterval(timerRef.current);
+      if (timerRef.current !== null) {
+        clearInterval(timerRef.current);
+        timerRef.current = null;
+      }
     };
-  }, [gameActive, timeLeft]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [gameActive, isPaused]);
 
-  // Проверка победы
+  // Win by score
   useEffect(() => {
-    if (currentScore >= target && gameActive) {
+    if (score >= targetScore && gameActive) {
       endGame(true);
     }
-  }, [currentScore, target, gameActive]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [score]);
 
-  const handleTap = useCallback(() => {
-    if (!gameActive) return;
+  const handleTap = () => {
+    if (!gameActive || isPaused) return;
+    setScore(s => s + 1);
+    void playTap();
 
-    setCurrentScore(prev => prev + 1);
-    Vibration.vibrate(20);
-    playTap(); // ✅ ЗВУК ТАПА
+    // reset idle timeout
+    if (idleRef.current !== null) {
+      clearTimeout(idleRef.current);
+      idleRef.current = null;
+    }
+    idleRef.current = (setTimeout(() => {
+      endGame(false);
+    }, 5000) as unknown) as number;
+  };
 
-    if (idleTimer) clearTimeout(idleTimer);
-    const newTimer = setTimeout(() => endGame(false), 5000);
-    setIdleTimer(newTimer);
-  }, [gameActive, idleTimer]);
+  const openMenu = () => {
+    setIsPaused(true);
+    setMenuVisible(true);
+  };
+
+  const confirmExit = async () => {
+    setMenuVisible(false);
+    setIsPaused(false);
+    setGameActive(false);
+
+    if (timerRef.current !== null) { clearInterval(timerRef.current); timerRef.current = null; }
+    if (idleRef.current !== null) { clearTimeout(idleRef.current); idleRef.current = null; }
+
+    // save result as not won
+    try {
+      await saveGameResult({
+        nick: user?.nick || 'Гость',
+        timeSeconds,
+        targetScore,
+        achievedScore: score,
+        durationSeconds: Math.max(0, timeSeconds - timeLeft),
+        won: false,
+        playerLevel: currentLevel,
+      });
+    } catch (e) {
+      console.warn('Не удалось сохранить результат при выходе', e);
+    }
+
+    router.replace('/main');
+  };
 
   const endGame = async (won: boolean) => {
-    if (!gameActive) return; // Предотвращаем повторные вызовы
+    if (!gameActive) return;
     setGameActive(false);
-    if (timerRef.current) clearInterval(timerRef.current);
-    if (idleTimer) clearTimeout(idleTimer);
+    setIsPaused(false);
 
-    Vibration.vibrate(won ? 500 : 200);
-    if (won) playVictory();
-    else playFail();
+    if (timerRef.current !== null) { clearInterval(timerRef.current); timerRef.current = null; }
+    if (idleRef.current !== null) { clearTimeout(idleRef.current); idleRef.current = null; }
 
-    const usedTime = totalTime - timeLeft;
-    await saveGameResult({
-      nick: user?.nick || 'Гость',
-      timeSeconds: totalTime,
-      targetScore: target,
-      achievedScore: currentScore,
-      durationSeconds: usedTime,
-      won,
-      playerLevel: currentLevel,
-    });
+    try {
+      await saveGameResult({
+        nick: user?.nick || 'Гость',
+        timeSeconds,
+        targetScore,
+        achievedScore: score,
+        durationSeconds: Math.max(0, timeSeconds - timeLeft),
+        won,
+        playerLevel: currentLevel,
+      });
+    } catch (e) {
+      console.warn('Не удалось сохранить результат игры', e);
+    }
 
-    setTimeout(() => {
-      if (won) {
-        // ✅ ОКНО ПОБЕ democratization
-        Alert.alert(
-          '🎉 Поздравляем!',
-          `Вы перешли на новый уровень!\nУровень ${currentLevel} → ${currentLevel + 1}`,
-          [
-            {
-              text: 'Далее',
-              onPress: () => router.replace({
-                pathname: '/(game)/level-setup',
-                params: {
-                  playerLevel: (currentLevel + 1).toString(), // ✅ ПОВЫШЕНИЕ УРОВНЯ
-                },
-              }),
-            },
-          ]
-        );
+    if (won) {
+      // update user level in context & storage (if available)
+      if (typeof setUserLevel === 'function') {
+        try { await setUserLevel(currentLevel + 1); } catch { /* ignore */ }
+      }
+      void playVictory();
+
+      // show congrats modal (platform alert for native, custom for web)
+      if (Platform.OS === 'web') {
+        // web: simple confirm flow
+        setTimeout(() => {
+          router.replace(`/level-setup?playerLevel=${currentLevel + 1}`);
+        }, 200);
       } else {
         Alert.alert(
-          '😔 Поражение',
-          'Время вышло или бездействие!',
-          [{ text: 'В меню', onPress: () => router.replace('/main') }]
+          'ПОЗДРАВЛЯЕМ!',
+          `Вы перешли на новый уровень!\nУровень ${currentLevel + 1}\nОчков: ${score}`,
+          [
+            {
+              text: 'Следующий уровень',
+              onPress: () => router.replace(`/level-setup?playerLevel=${currentLevel + 1}`),
+            },
+          ],
         );
       }
-    }, 300);
+    } else {
+      // lost
+      if (Platform.OS === 'web') {
+        setTimeout(() => router.replace('/main'), 200);
+      } else {
+        Alert.alert('Игра окончена', 'Попробуйте ещё раз', [{ text: 'В меню', onPress: () => router.replace('/main') }]);
+      }
+    }
   };
 
-  const formatTime = (s: number) => {
-    const m = Math.floor(s / 60);
-    const sec = s % 60;
-    return `${m}:${sec.toString().padStart(2, '0')}`;
-  };
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      if (timerRef.current !== null) { clearInterval(timerRef.current); timerRef.current = null; }
+      if (idleRef.current !== null) { clearTimeout(idleRef.current); idleRef.current = null; }
+      if (tapSound.current) { tapSound.current.unloadAsync().catch(() => {}); tapSound.current = null; }
+      if (victorySound.current) { victorySound.current.unloadAsync().catch(() => {}); victorySound.current = null; }
+    };
+  }, []);
 
-  const exitGame = () => {
-    Alert.alert('Выход', 'Завершить игру?', [
-      { text: 'Продолжить', style: 'cancel' },
-      { text: 'В меню', onPress: () => router.replace('/main') },
-    ]);
-  };
+  const formatTime = (s: number) => `${Math.floor(s / 60)}:${(s % 60).toString().padStart(2, '0')}`;
 
   return (
-    <SafeAreaView style={styles.container}>
+    <SafeAreaView style={[styles.container, { backgroundColor: isDark ? '#0f0f23' : '#ffffff' }]}>
+      <AppHeader />
+
       <View style={styles.header}>
-        <View style={styles.infoBox}>
-          <Text style={styles.label}>⏱️</Text>
-          <Text style={styles.value}>{formatTime(timeLeft)}</Text>
+        <View style={styles.info}>
+          <Text style={[styles.label, { color: isDark ? '#aaa' : '#666' }]}>Время</Text>
+          <Text style={[styles.value, { color: isDark ? '#fff' : '#000' }]}>{formatTime(timeLeft)}</Text>
         </View>
-        <View style={styles.infoBox}>
-          <Text style={styles.label}>🎯</Text>
-          <Text style={styles.value}>{currentScore}/{target}</Text>
+
+        <View style={styles.info}>
+          <Text style={[styles.label, { color: isDark ? '#aaa' : '#666' }]}>Очки</Text>
+          <Text style={[styles.value, { color: isDark ? '#fff' : '#000' }]}>{score}/{targetScore}</Text>
         </View>
-        <View style={styles.infoBox}>
-          <Text style={styles.label}>#</Text>
-          <Text style={styles.value}>{currentLevel}</Text>
+
+        <View style={styles.info}>
+          <Text style={[styles.label, { color: isDark ? '#aaa' : '#666' }]}>Уровень</Text>
+          <Text style={[styles.value, { color: isDark ? '#fff' : '#000' }]}>#{currentLevel}</Text>
         </View>
       </View>
 
-      <TouchableOpacity style={styles.tapCircle} onPress={handleTap} activeOpacity={0.7}>
+      <TouchableOpacity style={[styles.circle, { backgroundColor: isDark ? '#ff3b7a' : '#ff006e' }]} onPress={handleTap} activeOpacity={0.8}>
         <Text style={styles.tapText}>ТАП!</Text>
-        <Text style={styles.tapEmoji}>👆</Text>
+        <Text style={styles.emoji}>🔺</Text>
       </TouchableOpacity>
 
-      <TouchableOpacity style={styles.exitBtn} onPress={exitGame}>
-        <Text style={styles.exitText}>← Меню</Text>
+      <TouchableOpacity style={styles.menuBtn} onPress={openMenu} activeOpacity={0.8}>
+        <Text style={styles.menuText}>Меню</Text>
       </TouchableOpacity>
 
-      <View style={styles.footer}>
-        <Text style={styles.player}>{user?.nick || 'Гость'}</Text>
-      </View>
+      <Text style={[styles.footer, { color: isDark ? '#aaa' : '#666' }]}>{user?.nick || 'Гость'}</Text>
+
+      {/* In-app modal menu */}
+      <Modal visible={menuVisible} transparent animationType="fade">
+        <View style={modalStyles.bg}>
+          <View style={[modalStyles.container, { backgroundColor: isDark ? '#12121a' : '#fff' }]}>
+            <Text style={[modalStyles.title, { color: isDark ? '#fff' : '#000' }]}>Выйти в меню?</Text>
+            <Text style={[modalStyles.sub, { color: isDark ? '#ccc' : '#444' }]}>Игра будет завершена</Text>
+
+            <View style={modalStyles.row}>
+              <TouchableOpacity style={[modalStyles.btn, { backgroundColor: isDark ? '#2a2a34' : '#eee' }]} onPress={() => { setMenuVisible(false); setIsPaused(false); }}>
+                <Text style={[modalStyles.btnText, { color: isDark ? '#fff' : '#000' }]}>Продолжить</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity style={[modalStyles.btn, { backgroundColor: '#ff006e' }]} onPress={confirmExit}>
+                <Text style={modalStyles.btnText}>Выйти</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#0f0f23', justifyContent: 'space-between' },
-  header: { flexDirection: 'row', justifyContent: 'space-around', paddingTop: 60 },
-  infoBox: { alignItems: 'center' },
-  label: { fontSize: 16, color: '#aaa' },
-  value: { fontSize: 32, fontWeight: 'bold', color: '#fff' },
-  tapCircle: {
-    width: 320,
-    height: 320,
-    borderRadius: 160,
-    backgroundColor: '#ff006e', // ✅ РОЗОВЫЙ КРУГ
+  container: { flex: 1 },
+  header: { flexDirection: 'row', justifyContent: 'space-around', paddingTop: 30, paddingHorizontal: 10 },
+  info: { alignItems: 'center' },
+  label: { fontSize: 14 },
+  value: { fontSize: 28, fontWeight: '700', marginTop: 6 },
+
+  circle: {
+    width: 300,
+    height: 300,
+    borderRadius: 150,
+    alignSelf: 'center',
     justifyContent: 'center',
     alignItems: 'center',
-    alignSelf: 'center',
-    marginVertical: 60,
-    shadowColor: '#ff006e',
-    shadowOpacity: 0.9,
-    shadowRadius: 40,
-    elevation: 30,
+    marginTop: 30,
+    shadowColor: '#000',
+    shadowOpacity: 0.25,
+    shadowRadius: 20,
+    elevation: 10,
   },
-  tapText: { fontSize: 56, fontWeight: 'bold', color: '#fff' },
-  tapEmoji: { fontSize: 80, marginTop: 10 },
-  exitBtn: { backgroundColor: '#444', paddingVertical: 12, paddingHorizontal: 24, borderRadius: 20, alignSelf: 'center' },
-  exitText: { color: '#fff', fontSize: 18, fontWeight: 'bold' },
-  footer: { paddingBottom: 40, alignItems: 'center' },
-  player: { fontSize: 20, color: '#aaa', fontWeight: '600' },
+  tapText: { fontSize: 56, color: '#fff', fontWeight: '900' },
+  emoji: { fontSize: 72, marginTop: 6 },
+
+  menuBtn: { alignSelf: 'center', marginTop: 28, backgroundColor: '#444', paddingVertical: 12, paddingHorizontal: 36, borderRadius: 30 },
+  menuText: { color: '#fff', fontSize: 18, fontWeight: '700' },
+
+  footer: { textAlign: 'center', paddingBottom: 24, marginTop: 8, fontSize: 16 },
+});
+
+const modalStyles = StyleSheet.create({
+  bg: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center' },
+  container: { width: 320, borderRadius: 16, padding: 20, alignItems: 'center' },
+  title: { fontSize: 20, fontWeight: '800', marginBottom: 6 },
+  sub: { fontSize: 14, marginBottom: 16, textAlign: 'center' },
+  row: { flexDirection: 'row', justifyContent: 'space-between', width: '100%' },
+  btn: { flex: 1, paddingVertical: 12, borderRadius: 10, marginHorizontal: 6, alignItems: 'center' },
+  btnText: { color: '#fff', fontSize: 16, fontWeight: '700' },
 });

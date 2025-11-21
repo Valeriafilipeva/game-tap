@@ -15,6 +15,7 @@ export type GameResult = {
 
 const STORAGE_KEY = '@game_history';
 
+// src/services/gameHistory.ts
 export const saveGameResult = async (result: Omit<GameResult, 'id' | 'date'>) => {
   try {
     const newResult: GameResult = {
@@ -25,15 +26,14 @@ export const saveGameResult = async (result: Omit<GameResult, 'id' | 'date'>) =>
 
     const existing = await AsyncStorage.getItem(STORAGE_KEY);
     const history: GameResult[] = existing ? JSON.parse(existing) : [];
-
-    history.unshift(newResult); // новая запись сверху
-    if (history.length > 100) history.pop(); // лимит 100 игр
-
+    history.unshift(newResult);
+    if (history.length > 100) history.pop();
     await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(history));
   } catch (e) {
     console.warn('Не удалось сохранить игру', e);
   }
 };
+
 
 export const getGameHistory = async (): Promise<GameResult[]> => {
   try {

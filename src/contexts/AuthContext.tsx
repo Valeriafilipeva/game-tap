@@ -1,18 +1,18 @@
 // src/contexts/AuthContext.tsx
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { getGameHistory, saveGameResult, GameResult } from '../services/gameHistory';
 
 type User = {
   id: string;
-  email?: string;
   nick: string;
   isGuest: boolean;
 };
 
 type AuthContextType = {
   user: User | null;
-  login: (email: string, nick: string) => Promise<void>;
-  register: (email: string, password: string, nick: string) => Promise<void>;
+  login: (nick: string, password: string) => Promise<void>;
+  register: (nick: string, password: string) => Promise<void>;
   loginAsGuest: (nick: string) => Promise<void>;
   logout: () => Promise<void>;
   isLoading: boolean;
@@ -28,11 +28,9 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     const loadUser = async () => {
       try {
         const json = await AsyncStorage.getItem('@user');
-        if (json) {
-          setUser(JSON.parse(json));
-        }
+        if (json) setUser(JSON.parse(json));
       } catch (e) {
-        console.warn('Не удалось загрузить пользователя', e);
+        console.warn(e);
       } finally {
         setIsLoading(false);
       }
@@ -45,38 +43,40 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     await AsyncStorage.setItem('@user', JSON.stringify(userData));
   };
 
-  const login = async (email: string, nick: string) => {
-    const userData: User = {
-      id: Date.now().toString(),
-      email,
-      nick,
-      isGuest: false,
-    };
-    await saveUser(userData);
+  const login = async (nick: string, password: string) => {
+    const registeredUser: User = { id: Date.now().toString(), nick, isGuest: false };
+
+    // перенос истории гостя
+    const guest = await AsyncStorage.getItem('@guest');
+    if (guest) {
+      const guestId = guest;
+      const history = await getGameHistory();
+      const updatedHistory = history.map(h => (h.nick === guestId ? { ...h, nick: nick } : h));
+      await AsyncStorage.setItem('@game_history', JSON.stringify(updatedHistory));
+      await AsyncStorage.removeItem('@guest');
+    }
+
+    await saveUser(registeredUser);
   };
 
-  const register = async (email: string, password: string, nick: string) => {
-    await login(email, nick);
+  const register = async (nick: string, password: string) => {
+    await login(nick, password);
   };
 
   const loginAsGuest = async (nick: string) => {
-    const guestData: User = {
-      id: 'guest_' + Date.now(),
-      nick: nick || 'Гость',
-      isGuest: true,
-    };
+    const guestId = 'guest_' + Date.now();
+    const guestData: User = { id: guestId, nick: nick || 'Гость', isGuest: true };
     await saveUser(guestData);
+    await AsyncStorage.setItem('@guest', guestId); // для переноса истории
   };
 
   const logout = async () => {
     setUser(null);
-    await AsyncStorage.multiRemove(['@user']);
+    await AsyncStorage.removeItem('@user');
   };
 
   return (
-    <AuthContext.Provider
-      value={{ user, login, register, loginAsGuest, logout, isLoading }}
-    >
+    <AuthContext.Provider value={{ user, login, register, loginAsGuest, logout, isLoading }}>
       {children}
     </AuthContext.Provider>
   );
@@ -84,8 +84,6 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
 
 export const useAuth = () => {
   const context = useContext(AuthContext);
-  if (!context) {
-    throw new Error('useAuth должен использоваться внутри AuthProvider');
-  }
+  if (!context) throw new Error('useAuth должен использоваться внутри AuthProvider');
   return context;
 };

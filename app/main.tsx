@@ -1,75 +1,107 @@
-// app/main.tsx — БЕЗ РОЗОВОГО КРУГА!
 import React from 'react';
-import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, Image, ScrollView } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { useAuth } from '../src/contexts/AuthContext';
-import { useTheme } from '../src/contexts/ThemeContext'; // ← будем использовать контекст темы
+import { useTheme } from '../src/contexts/ThemeContext';
 
 export default function MainScreen() {
   const router = useRouter();
   const { user } = useAuth();
-  const { isDark, toggleTheme } = useTheme();
+  const { isDark } = useTheme();
 
-  const styles = isDark ? darkStyles : lightStyles;
+  const backgroundColor = isDark ? '#0f0f23' : '#ffffff';
+  const textColor = isDark ? '#00ff88' : '#000';
+
+  const displayName = user?.nick || 'Гость';
+  const isGuest = user?.isGuest;
 
   return (
-    <SafeAreaView style={styles.container}>
-      {/* Шапка */}
-      <View style={styles.header}>
-        <Text style={styles.title}>GameTap</Text>
-        <TouchableOpacity onPress={() => router.push('/profile')}>
-          <Text style={styles.nick}>{user?.nick || 'Гость'}</Text>
+    <SafeAreaView style={[styles.container, { backgroundColor }]}>
+      {/* Верхний правый угол: кликабельный ЛК */}
+      <TouchableOpacity style={styles.profileButton} onPress={() => router.push('/profile')}>
+        <Text style={styles.profileText}>
+          {displayName} {isGuest ? '(Гость)' : ''}
+        </Text>
       </TouchableOpacity>
-      </View>
 
-      {/* Кнопки */}
-      <View style={styles.buttons}>
-        <TouchableOpacity style={styles.button} onPress={() => router.push('/(game)/level-setup')}>
-          <Text style={styles.buttonText}>Новая игра</Text>
+      <ScrollView contentContainerStyle={styles.content}>
+        {/* Краткая информация о игре */}
+        <Text style={[styles.title, { color: textColor }]}>Добро пожаловать в GameTap!</Text>
+        <Text style={[styles.description, { color: textColor }]}>
+          В этой игре вам нужно нажимать на круг как можно быстрее и набрать указанное количество очков.
+          Каждый уровень сложнее предыдущего. Проверьте свои рефлексы и побейте рекорды!
+        </Text>
+
+        {/* Картинка игры */}
+        <Image
+           source={require('../assets/images/game_preview.png')} // вставьте свою картинку
+          style={styles.image}
+          resizeMode="contain"
+        />
+
+        {/* Основные кнопки */}
+        <TouchableOpacity
+          style={[styles.button, { backgroundColor: '#00ff88' }]}
+          onPress={() => router.push('/(game)/level-setup')}
+        >
+          <Text style={styles.buttonText}>Играть</Text>
         </TouchableOpacity>
 
-        <TouchableOpacity style={styles.button} onPress={() => router.push('/history')}>
+        <TouchableOpacity
+          style={[styles.button, { backgroundColor: '#0088ff' }]}
+          onPress={() => router.push('/history')}
+        >
           <Text style={styles.buttonText}>История игр</Text>
         </TouchableOpacity>
 
-        <TouchableOpacity style={styles.button} onPress={() => router.push('/settings')}>
+        <TouchableOpacity
+          style={[styles.button, { backgroundColor: '#bb86fc' }]}
+          onPress={() => router.push('/settings')}
+        >
           <Text style={styles.buttonText}>Настройки</Text>
         </TouchableOpacity>
-      </View>
-
-      {/* Переключатель темы внизу */}
-      <TouchableOpacity style={styles.themeToggle} onPress={toggleTheme}>
-        <Text style={styles.themeText}>
-          {isDark ? 'Тёмная тема' : 'Светлая тема'}
-        </Text>
-      </TouchableOpacity>
+      </ScrollView>
     </SafeAreaView>
   );
 }
 
-// ТЁМНАЯ ТЕМА
-const darkStyles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#0f0f23', padding: 20 },
-  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 40 },
-  title: { fontSize: 42, fontWeight: 'bold', color: '#00ff88' },
-  nick: { fontSize: 20, color: '#fff', fontWeight: 'bold' },
-  buttons: { flex: 1, justifyContent: 'center', gap: 24 },
-  button: { backgroundColor: '#ff006e', padding: 20, borderRadius: 16, alignItems: 'center' },
-  buttonText: { fontSize: 24, color: '#fff', fontWeight: 'bold' },
-  themeToggle: { alignItems: 'center', marginBottom: 40 },
-  themeText: { fontSize: 18, color: '#aaa' },
-});
+const styles = StyleSheet.create({
+  container: { flex: 1 },
+  profileButton: {
+    position: 'absolute',
+    top: 10,
+    right: 15,
+    padding: 8,
+    backgroundColor: '#222',
+    borderRadius: 10,
+    zIndex: 10,
+  },
+  profileText: { color: '#fff', fontWeight: 'bold', fontSize: 16 },
 
-// СВЕТЛАЯ ТЕМА
-const lightStyles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#f8f8f8', padding: 20 },
-  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 40 },
-  title: { fontSize: 42, fontWeight: 'bold', color: '#6200ee' },
-  nick: { fontSize: 20, color: '#333', fontWeight: 'bold' },
-  buttons: { flex: 1, justifyContent: 'center', gap: 24 },
-  button: { backgroundColor: '#6200ee', padding: 20, borderRadius: 16, alignItems: 'center' },
-  buttonText: { fontSize: 24, color: '#fff', fontWeight: 'bold' },
-  themeToggle: { alignItems: 'center', marginBottom: 40 },
-  themeText: { fontSize: 18, color: '#666' },
+  content: {
+    flexGrow: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+    paddingTop: 80,
+    paddingBottom: 40,
+    gap: 20,
+  },
+  title: { fontSize: 28, fontWeight: 'bold', textAlign: 'center' },
+  description: { fontSize: 16, textAlign: 'center', marginVertical: 10 },
+
+  image: { width: 250, height: 250, marginVertical: 20 },
+
+  button: {
+    paddingVertical: 16,
+    paddingHorizontal: 50,
+    borderRadius: 20,
+    marginVertical: 8,
+    elevation: 5,
+    shadowColor: '#000',
+    shadowOpacity: 0.3,
+    shadowRadius: 5,
+  },
+  buttonText: { color: '#fff', fontSize: 20, fontWeight: 'bold', textAlign: 'center' },
 });
