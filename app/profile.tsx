@@ -14,7 +14,7 @@ export default function ProfileScreen() {
 
   const handleLogout = async () => {
     await logout();
-    router.replace('/main');
+    router.replace('/');
   };
 
   const nick = user?.nick || 'Гость';
@@ -63,13 +63,6 @@ export default function ProfileScreen() {
             </>
           ) : (
             <>
-              <TouchableOpacity
-                style={[styles.actionBtn, { backgroundColor: '#00b894' }]}
-                onPress={() => router.push('/(auth)/login')}
-              >
-                <Text style={styles.actionText}>Войти</Text>
-              </TouchableOpacity>
-
               <TouchableOpacity
                 style={[styles.actionBtn, { backgroundColor: '#6c5ce7' }]}
                 onPress={() => router.push('/(auth)/register')}

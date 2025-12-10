@@ -11,16 +11,13 @@ export default function AuthStartScreen() {
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.content}>
-        {/* Логотип / название игры */}
         <Text style={styles.title}>GameTap</Text>
         <Text style={styles.subtitle}>Тапай быстрее всех!</Text>
 
         <View style={styles.iconPlaceholder}>
-       <Text style={styles.iconText}>TAP</Text>
-       <Text style={styles.iconEmoji}>Tap</Text>
-       </View>
+          <Text style={styles.iconText}>TAP</Text>
+        </View>
 
-        {/* Три главные кнопки */}
         <PrimaryButton
           title="Зарегистрироваться"
           onPress={() => router.push('/(auth)/register')}
@@ -42,6 +39,7 @@ export default function AuthStartScreen() {
     </SafeAreaView>
   );
 }
+
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#0f0f23' },

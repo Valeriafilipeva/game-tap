@@ -210,30 +210,28 @@ export default function GameplayScreen() {
     }
 
     if (won) {
-      // update user level in context & storage (if available)
-      if (typeof setUserLevel === 'function') {
-        try { await setUserLevel(currentLevel + 1); } catch { /* ignore */ }
-      }
-      void playVictory();
+  // обновление уровня глобально
+  if (user && setUserLevel) {
+    await setUserLevel(currentLevel + 1);
+  }
+  void playVictory();
 
-      // show congrats modal (platform alert for native, custom for web)
-      if (Platform.OS === 'web') {
-        // web: simple confirm flow
-        setTimeout(() => {
-          router.replace(`/level-setup?playerLevel=${currentLevel + 1}`);
-        }, 200);
-      } else {
-        Alert.alert(
-          'ПОЗДРАВЛЯЕМ!',
-          `Вы перешли на новый уровень!\nУровень ${currentLevel + 1}\nОчков: ${score}`,
-          [
-            {
-              text: 'Следующий уровень',
-              onPress: () => router.replace(`/level-setup?playerLevel=${currentLevel + 1}`),
-            },
-          ],
-        );
-      }
+  if (Platform.OS === 'web') {
+    setTimeout(() => router.replace(`/level-setup?playerLevel=${currentLevel + 1}`), 200);
+  } else {
+    Alert.alert(
+      'ПОЗДРАВЛЯЕМ!',
+      `Вы перешли на новый уровень!\nУровень ${currentLevel + 1}\nОчков: ${score}`,
+      [
+        {
+          text: 'Следующий уровень',
+          onPress: () => router.replace(`/level-setup?playerLevel=${currentLevel + 1}`),
+        },
+      ],
+    );
+  }
+
+
     } else {
       // lost
       if (Platform.OS === 'web') {

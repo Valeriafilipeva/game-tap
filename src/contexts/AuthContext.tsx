@@ -7,10 +7,12 @@ type User = {
   id: string;
   nick: string;
   isGuest: boolean;
+  level: number; // добавляем уровень
 };
 
 type AuthContextType = {
   user: User | null;
+  setUserLevel?: (level: number) => Promise<void>; // метод для обновления уровня
   login: (nick: string, password: string) => Promise<void>;
   register: (nick: string, password: string) => Promise<void>;
   loginAsGuest: (nick: string) => Promise<void>;
@@ -37,6 +39,14 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     };
     loadUser();
   }, []);
+  
+  const setUserLevel = async (level: number) => {
+  if (!user) return;
+  const updatedUser = { ...user, level };
+  setUser(updatedUser);
+  await AsyncStorage.setItem('@user', JSON.stringify(updatedUser));
+};
+
 
   const saveUser = async (userData: User) => {
     setUser(userData);
@@ -76,7 +86,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   };
 
   return (
-    <AuthContext.Provider value={{ user, login, register, loginAsGuest, logout, isLoading }}>
+    <AuthContext.Provider value={{ user, login, register, loginAsGuest, logout, isLoading, setUserLevel }}>
       {children}
     </AuthContext.Provider>
   );
