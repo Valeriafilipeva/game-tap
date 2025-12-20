@@ -16,6 +16,7 @@ describe('Full gameplay scenario', () => {
         </AuthProvider>
       </NavigationContainer>
     );
+    // Покрывает весь сценарий: регистрация, игра, проверка истории и выход.
 
     // --- Шаг 1: Проверяем стартовый экран ---
     expect(getByText('Платформенные функции')).toBeTruthy();
